@@ -1,4 +1,7 @@
 import json
+from datetime import datetime
+
+import pandas as pd
 import requests
 import streamlit as st
 from sklearn.datasets import load_wine
@@ -42,8 +45,8 @@ def wine_sliders() -> dict:
         values[name] = st.slider(label, low, high, float(start), step)
     return values
 
-def predict_wine(client_input: dict) -> None:
-    """Send prediction request and display result."""
+def predict_wine(client_input: dict, source: str) -> None:
+    """Send prediction request, display result and add it to the history."""
     result_container = st.empty()
     try:
         with st.spinner('Predicting...'):
@@ -63,6 +66,14 @@ def predict_wine(client_input: dict) -> None:
                 st.progress(confidence)
                 if confidence < LOW_CONFIDENCE:
                     st.warning("Low confidence: the model is unsure about this wine, treat the prediction with caution.")
+            # keep every successful prediction for this browser session
+            st.session_state["history"].append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "input": source,
+                "cultivar": content['class_name'],
+                "confidence": round(confidence, 3),
+                **client_input,
+            })
         elif response.status_code == 422:
             result_container.error("The backend rejected the input. All 13 features must be present and greater than 0.")
         else:
@@ -71,8 +82,27 @@ def predict_wine(client_input: dict) -> None:
         st.toast(':red[Backend error. Refresh and retry]', icon="🔴")
         LOGGER.error(f"Prediction error: {e}")
 
+def show_history() -> None:
+    """Table of this session's predictions, with download and clear buttons."""
+    history = st.session_state["history"]
+    if not history:
+        return
+    st.subheader(f"Prediction history ({len(history)})")
+    history_df = pd.DataFrame(history)
+    st.dataframe(history_df, hide_index=True)
+    col1, col2 = st.columns(2)
+    col1.download_button("Download as CSV", history_df.to_csv(index=False),
+                         file_name="prediction_history.csv", mime="text/csv")
+    if col2.button("Clear history"):
+        st.session_state["history"] = []
+        st.rerun()
+
 def run():
     st.set_page_config(page_title="Wine Cultivar Prediction Demo", page_icon="🍷")
+
+    # survives reruns, but starts empty again when the page is refreshed
+    if "history" not in st.session_state:
+        st.session_state["history"] = []
 
     with st.sidebar:
         # Backend status check
@@ -112,7 +142,9 @@ def run():
     st.write("# Wine Cultivar Prediction! 🍷")
 
     if predict_button:
-        predict_wine(client_input)
+        predict_wine(client_input, input_mode)
+
+    show_history()
 
 if __name__ == "__main__":
     run()

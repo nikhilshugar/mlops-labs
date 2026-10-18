@@ -2,3 +2,4 @@ scikit-learn==1.9.1
 fastapi[all]==0.142.2
 streamlit==1.66.0
 requests==2.34.2
+pandas==3.0.6
