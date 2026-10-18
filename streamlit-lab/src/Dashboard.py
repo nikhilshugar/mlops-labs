@@ -5,6 +5,7 @@ from sklearn.datasets import load_wine
 from streamlit.logger import get_logger
 
 FASTAPI_BACKEND_ENDPOINT = "http://localhost:8000"
+LOW_CONFIDENCE = 0.6
 
 LOGGER = get_logger(__name__)
 
@@ -54,7 +55,14 @@ def predict_wine(client_input: dict) -> None:
 
         if response.status_code == 200:
             content = response.json()
-            result_container.success(f"The wine predicted is: {content['class_name']}")
+            confidence = content['confidence']
+            with result_container.container():
+                col1, col2 = st.columns(2)
+                col1.metric("Predicted cultivar", content['class_name'])
+                col2.metric("Confidence", f"{confidence:.0%}")
+                st.progress(confidence)
+                if confidence < LOW_CONFIDENCE:
+                    st.warning("Low confidence: the model is unsure about this wine, treat the prediction with caution.")
         elif response.status_code == 422:
             result_container.error("The backend rejected the input. All 13 features must be present and greater than 0.")
         else:
