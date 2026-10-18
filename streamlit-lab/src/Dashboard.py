@@ -19,6 +19,17 @@ def get_feature_ranges() -> dict:
         ranges[name.replace("/", "_")] = (float(column.min()), float(column.max()), float(column.mean()))
     return ranges
 
+@st.cache_data(ttl=30)
+def check_backend() -> str:
+    """Returns 'online', 'error' or 'offline'. Cached for 30 seconds so the
+    backend isn't called on every slider change."""
+    try:
+        response = requests.get(FASTAPI_BACKEND_ENDPOINT, timeout=5)
+        return "online" if response.status_code == 200 else "error"
+    except requests.RequestException as e:
+        LOGGER.error(f"Backend error: {e}")
+        return "offline"
+
 def wine_sliders() -> dict:
     """One slider per feature, starting at the dataset average."""
     values = {}
@@ -57,12 +68,17 @@ def run():
 
     with st.sidebar:
         # Backend status check
-        try:
-            backend_request = requests.get(FASTAPI_BACKEND_ENDPOINT, timeout=5)
-            st.success("Backend online ✅" if backend_request.status_code == 200 else st.warning("Problem connecting 😭"))
-        except requests.ConnectionError as ce:
-            LOGGER.error(f"Backend error: {ce}")
+        backend_status = check_backend()
+        if backend_status == "online":
+            st.success("Backend online ✅")
+        elif backend_status == "error":
+            st.warning("Backend is up but returned an error 😭")
+        else:
             st.error("Backend offline 😱")
+
+        if st.button("Check again"):
+            check_backend.clear()
+            st.rerun()
 
         st.info("Configure parameters")
 
@@ -82,8 +98,8 @@ def run():
                 except (ValueError, KeyError, TypeError):
                     st.error('File must be valid JSON with an "input_test" section')
 
-        # nothing to send until there is input (e.g. no file uploaded yet)
-        predict_button = st.button('Predict', disabled=client_input is None)
+        # nothing to send until there is input and the backend is reachable
+        predict_button = st.button('Predict', disabled=client_input is None or backend_status != "online")
 
     st.write("# Wine Cultivar Prediction! 🍷")
 
