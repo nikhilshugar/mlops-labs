@@ -26,6 +26,8 @@ These Python packages are installed in the setup step from `requirements.txt`:
 
 ## Setup (one time)
 
+Windows:
+
 ```
 git clone https://github.com/nikhilshugar/mlops-labs.git
 cd mlops-labs/streamlit-lab
@@ -34,7 +36,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-On Mac/Linux, use `python3 -m venv .venv` and `source .venv/bin/activate`.
+Mac/Linux:
+
+```
+git clone https://github.com/nikhilshugar/mlops-labs.git
+cd mlops-labs/streamlit-lab
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
 The trained model is already in the repo (`fastapi-lab/model/wine_model.pkl`), so no training is needed.
 
@@ -42,7 +52,7 @@ The trained model is already in the repo (`fastapi-lab/model/wine_model.pkl`), s
 
 Open two terminals in `mlops-labs/streamlit-lab`.
 
-Terminal 1 (backend):
+Terminal 1 (backend), Windows:
 
 ```
 .venv\Scripts\activate
@@ -50,12 +60,28 @@ cd ../fastapi-lab/src
 uvicorn main:app --reload
 ```
 
+Terminal 1 (backend), Mac/Linux:
+
+```
+source .venv/bin/activate
+cd ../fastapi-lab/src
+uvicorn main:app --reload
+```
+
 Wait until it says `Application startup complete`.
 
-Terminal 2 (dashboard):
+Terminal 2 (dashboard), Windows:
 
 ```
 .venv\Scripts\activate
+cd src
+streamlit run Dashboard.py
+```
+
+Terminal 2 (dashboard), Mac/Linux:
+
+```
+source .venv/bin/activate
 cd src
 streamlit run Dashboard.py
 ```
@@ -96,4 +122,4 @@ Backend stopped:
 - "Backend offline": start the backend first, then click Check again.
 - `Could not import module "main"`: run uvicorn from `fastapi-lab/src`.
 - `streamlit` or `uvicorn` not recognized: activate the virtual environment in that terminal.
-- PowerShell says scripts are disabled: run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again.
+- Windows PowerShell says scripts are disabled: run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again.
