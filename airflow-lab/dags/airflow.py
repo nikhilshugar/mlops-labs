@@ -1,9 +1,10 @@
 # Import necessary libraries and modules
 from airflow import DAG
 from airflow.sdk import Param
-from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
 from datetime import datetime, timedelta
-from src.lab import load_data, data_preprocessing, find_optimal_k, train_final_model, predict_test
+from src.lab import (load_data, validate_data, stop_on_invalid_data, data_preprocessing,
+                     find_optimal_k, train_final_model, predict_test)
 
 # Define default arguments for your DAG
 default_args = {
@@ -12,6 +13,13 @@ default_args = {
     'retries': 2,  # a failed task is tried again up to 2 more times
     'retry_delay': timedelta(seconds=30),  # wait between retries
 }
+
+
+def choose_path(data_b64):
+    # picks the next task: training if the data is fine, otherwise the stop task
+    problems = validate_data(data_b64)
+    return "invalid_data_task" if problems else "data_preprocessing_task"
+
 
 with DAG(
     'Airflow_Lab1',
@@ -22,6 +30,8 @@ with DAG(
     params={
         "max_k": Param(49, type="integer", minimum=3, maximum=100,
                        description="Largest k to try in the elbow method"),
+        "data_file": Param("file.csv", type="string",
+                           description="CSV in dags/data to train on (bad_file.csv tests validation)"),
     },
     # so "{{ params.max_k }}" is passed to the task as a number, not text
     render_template_as_native_obj=True,
@@ -30,6 +40,22 @@ with DAG(
     load_data_task = PythonOperator(
         task_id='load_data_task',
         python_callable=load_data,
+        op_kwargs={"filename": "{{ params.data_file }}"},
+    )
+
+    # branch: decides whether the run continues to training or stops
+    validate_data_task = BranchPythonOperator(
+        task_id='validate_data_task',
+        python_callable=choose_path,
+        op_args=[load_data_task.output],
+    )
+
+    # only runs when validation fails; retrying won't fix bad data
+    invalid_data_task = PythonOperator(
+        task_id='invalid_data_task',
+        python_callable=stop_on_invalid_data,
+        op_args=[load_data_task.output],
+        retries=0,
     )
 
     data_preprocessing_task = PythonOperator(
@@ -60,7 +86,8 @@ with DAG(
         op_args=["model.sav"],
     )
 
-    load_data_task >> data_preprocessing_task >> find_optimal_k_task >> train_final_model_task >> predict_task
+    load_data_task >> validate_data_task >> [data_preprocessing_task, invalid_data_task]
+    data_preprocessing_task >> find_optimal_k_task >> train_final_model_task >> predict_task
 
 # If this script is run directly, allow command-line interaction with the DAG
 if __name__ == "__main__":

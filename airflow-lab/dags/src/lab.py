@@ -7,17 +7,53 @@ import os
 import base64
 
 FEATURES = ["BALANCE", "PURCHASES", "CREDIT_LIMIT"]
+MIN_ROWS = 100
 KMEANS_KWARGS = {"init": "random", "n_init": 10, "max_iter": 300, "random_state": 42}
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "model")
 
 
-def load_data():
+def load_data(filename: str = "file.csv"):
     """
-    Loads the training CSV and returns it as a base64 string (JSON-safe for XCom).
+    Loads a CSV from the data folder and returns it as a base64 string (JSON-safe for XCom).
     """
-    df = pd.read_csv(os.path.join(DATA_DIR, "file.csv"))
+    df = pd.read_csv(os.path.join(DATA_DIR, filename))
+    print(f"Loaded {filename}: {len(df)} rows")
     return base64.b64encode(pickle.dumps(df)).decode("ascii")
+
+
+def validate_data(data_b64: str):
+    """
+    Checks the loaded data before training.
+    Returns a list of problems, empty if the data is fine.
+    """
+    df = pickle.loads(base64.b64decode(data_b64))
+    problems = []
+
+    missing = [col for col in FEATURES if col not in df.columns]
+    if missing:
+        problems.append(f"missing columns: {missing}")
+        return problems
+
+    usable = df.dropna()
+    if len(usable) < MIN_ROWS:
+        problems.append(f"only {len(usable)} usable rows, need at least {MIN_ROWS}")
+    if (usable[FEATURES] < 0).any().any():
+        problems.append("negative values in BALANCE, PURCHASES or CREDIT_LIMIT")
+
+    if problems:
+        print(f"Validation failed: {problems}")
+    else:
+        print(f"Validation passed: {len(usable)} usable rows")
+    return problems
+
+
+def stop_on_invalid_data(data_b64: str):
+    """
+    Runs only when validation fails. Fails the run with the list of problems.
+    """
+    problems = validate_data(data_b64)
+    raise ValueError("Data validation failed: " + "; ".join(problems))
 
 
 def data_preprocessing(data_b64: str):
