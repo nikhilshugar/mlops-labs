@@ -2,9 +2,10 @@
 from airflow import DAG
 from airflow.sdk import Param
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
+from airflow.providers.standard.operators.bash import BashOperator
 from datetime import datetime, timedelta
 from src.lab import (load_data, validate_data, stop_on_invalid_data, data_preprocessing,
-                     find_optimal_k, train_final_model, predict_test)
+                     find_optimal_k, train_final_model, predict_test, write_report)
 
 # Define default arguments for your DAG
 default_args = {
@@ -86,8 +87,28 @@ with DAG(
         op_args=["model.sav"],
     )
 
+    # collects results from earlier tasks (XCom) and settings (templates) into report.json
+    report_task = PythonOperator(
+        task_id='report_task',
+        python_callable=write_report,
+        op_kwargs={
+            "run_id": "{{ run_id }}",
+            "data_file": "{{ params.data_file }}",
+            "max_k": "{{ params.max_k }}",
+            "best_k": find_optimal_k_task.output,
+            "predictions": predict_task.output,
+        },
+    )
+
+    # prints the report with a shell command
+    show_report_task = BashOperator(
+        task_id='show_report_task',
+        bash_command='cat /opt/airflow/dags/model/report.json',
+    )
+
     load_data_task >> validate_data_task >> [data_preprocessing_task, invalid_data_task]
     data_preprocessing_task >> find_optimal_k_task >> train_final_model_task >> predict_task
+    predict_task >> report_task >> show_report_task
 
 # If this script is run directly, allow command-line interaction with the DAG
 if __name__ == "__main__":

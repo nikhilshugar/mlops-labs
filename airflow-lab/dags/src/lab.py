@@ -2,7 +2,9 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import KMeans
 from kneed import KneeLocator
+from datetime import datetime, timezone
 import pickle
+import json
 import os
 import base64
 
@@ -123,3 +125,23 @@ def predict_test(filename: str):
     predictions = [int(p) for p in model.predict(scaler.transform(test_df[FEATURES]))]
     print(f"Predicted clusters for test data: {predictions}")
     return predictions
+
+
+def write_report(run_id: str, data_file: str, max_k: int, best_k: int, predictions: list):
+    """
+    Writes a short summary of the run to model/report.json.
+    """
+    report = {
+        "run_id": run_id,
+        "data_file": data_file,
+        "max_k": max_k,
+        "best_k": best_k,
+        "test_predictions": predictions,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    report_path = os.path.join(MODEL_DIR, "report.json")
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"Report saved to {report_path}")
+    return report
