@@ -6,83 +6,84 @@ import pickle
 import os
 import base64
 
+FEATURES = ["BALANCE", "PURCHASES", "CREDIT_LIMIT"]
+KMEANS_KWARGS = {"init": "random", "n_init": 10, "max_iter": 300, "random_state": 42}
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "model")
+
+
 def load_data():
     """
-    Loads data from a CSV file, serializes it, and returns the serialized data.
-    Returns:
-        str: Base64-encoded serialized data (JSON-safe).
+    Loads the training CSV and returns it as a base64 string (JSON-safe for XCom).
     """
-    print("We are here")
-    df = pd.read_csv(os.path.join(os.path.dirname(__file__), "../data/file.csv"))
-    serialized_data = pickle.dumps(df)                    # bytes
-    return base64.b64encode(serialized_data).decode("ascii")  # JSON-safe string
+    df = pd.read_csv(os.path.join(DATA_DIR, "file.csv"))
+    return base64.b64encode(pickle.dumps(df)).decode("ascii")
+
 
 def data_preprocessing(data_b64: str):
     """
-    Deserializes base64-encoded pickled data, performs preprocessing,
-    and returns base64-encoded pickled clustered data.
+    Drops rows with missing values, keeps the 3 feature columns and scales them to 0-1.
+    Saves the fitted scaler so the test data can be scaled the same way later.
+    Returns the scaled data as a base64 string.
     """
-    # decode -> bytes -> DataFrame
-    data_bytes = base64.b64decode(data_b64)
-    df = pickle.loads(data_bytes)
-
+    df = pickle.loads(base64.b64decode(data_b64))
     df = df.dropna()
-    clustering_data = df[["BALANCE", "PURCHASES", "CREDIT_LIMIT"]]
 
-    min_max_scaler = MinMaxScaler()
-    clustering_data_minmax = min_max_scaler.fit_transform(clustering_data)
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(df[FEATURES])
 
-    # bytes -> base64 string for XCom
-    clustering_serialized_data = pickle.dumps(clustering_data_minmax)
-    return base64.b64encode(clustering_serialized_data).decode("ascii")
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    with open(os.path.join(MODEL_DIR, "scaler.pkl"), "wb") as f:
+        pickle.dump(scaler, f)
+
+    return base64.b64encode(pickle.dumps(scaled_data)).decode("ascii")
 
 
-def build_save_model(data_b64: str, filename: str):
+def find_optimal_k(data_b64: str, max_k: int = 49):
     """
-    Builds a KMeans model on the preprocessed data and saves it.
-    Returns the SSE list (JSON-serializable).
+    Fits K-Means for k = 1 to max_k and uses the elbow method to pick the best k.
+    Returns k as a plain int so the next task can use it.
     """
-    # decode -> bytes -> numpy array
-    data_bytes = base64.b64decode(data_b64)
-    df = pickle.loads(data_bytes)
+    data = pickle.loads(base64.b64decode(data_b64))
 
-    kmeans_kwargs = {"init": "random", "n_init": 10, "max_iter": 300, "random_state": 42}
     sse = []
-    for k in range(1, 50):
-        kmeans = KMeans(n_clusters=k, **kmeans_kwargs)
-        kmeans.fit(df)
+    for k in range(1, max_k + 1):
+        kmeans = KMeans(n_clusters=k, **KMEANS_KWARGS)
+        kmeans.fit(data)
         sse.append(kmeans.inertia_)
 
-    # NOTE: This saves the last-fitted model (k=49), matching your original intent.
-    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "model")
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, filename)
-    with open(output_path, "wb") as f:
-        pickle.dump(kmeans, f)
-
-    return sse  # list is JSON-safe
-
-
-def load_model_elbow(filename: str, sse: list):
-    """
-    Loads the saved model and uses the elbow method to report k.
-    Returns the first prediction (as a plain int) for test.csv.
-    """
-    # load the saved (last-fitted) model
-    output_path = os.path.join(os.path.dirname(__file__), "../model", filename)
-    loaded_model = pickle.load(open(output_path, "rb"))
-
-    # elbow for information/logging
-    kl = KneeLocator(range(1, 50), sse, curve="convex", direction="decreasing")
+    kl = KneeLocator(range(1, max_k + 1), sse, curve="convex", direction="decreasing")
+    if kl.elbow is None:
+        raise ValueError("Elbow method could not find a good k")
     print(f"Optimal no. of clusters: {kl.elbow}")
+    return int(kl.elbow)
 
-    # predict on raw test data (matches your original code)
-    df = pd.read_csv(os.path.join(os.path.dirname(__file__), "../data/test.csv"))
-    pred = loaded_model.predict(df)[0]
 
-    # ensure JSON-safe return
-    try:
-        return int(pred)
-    except Exception:
-        # if not numeric, still return a JSON-friendly version
-        return pred.item() if hasattr(pred, "item") else pred
+def train_final_model(data_b64: str, k: int, filename: str):
+    """
+    Trains the final K-Means model with the k found by the elbow method and saves it.
+    """
+    data = pickle.loads(base64.b64decode(data_b64))
+
+    kmeans = KMeans(n_clusters=k, **KMEANS_KWARGS)
+    kmeans.fit(data)
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    with open(os.path.join(MODEL_DIR, filename), "wb") as f:
+        pickle.dump(kmeans, f)
+    print(f"Saved model with {k} clusters as {filename}")
+
+
+def predict_test(filename: str):
+    """
+    Scales test.csv with the saved scaler and predicts a cluster for each row.
+    """
+    with open(os.path.join(MODEL_DIR, "scaler.pkl"), "rb") as f:
+        scaler = pickle.load(f)
+    with open(os.path.join(MODEL_DIR, filename), "rb") as f:
+        model = pickle.load(f)
+
+    test_df = pd.read_csv(os.path.join(DATA_DIR, "test.csv"))
+    predictions = [int(p) for p in model.predict(scaler.transform(test_df[FEATURES]))]
+    print(f"Predicted clusters for test data: {predictions}")
+    return predictions
