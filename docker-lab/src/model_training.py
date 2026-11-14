@@ -5,6 +5,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 if __name__ == '__main__':
+    # fixed seed so every build trains the same model
+    tf.keras.utils.set_random_seed(42)
+
     # Load the Iris dataset
     iris = datasets.load_iris()
     X, y = iris.data, iris.target
@@ -26,7 +29,11 @@ if __name__ == '__main__':
     model.compile(optimizer='adam', loss='sparse_categorical_crossentropy',
                   metrics=['accuracy'])
 
-    model.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test))
+    # 50 epochs was not enough for the model to finish learning
+    model.fit(X_train, y_train, epochs=200, validation_data=(X_test, y_test), verbose=0)
+
+    loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+    print(f"Test accuracy: {accuracy:.3f}")
 
     model.save('my_model.keras')
     # save the scaler too, the app needs it to scale inputs the same way
