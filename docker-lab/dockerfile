@@ -30,8 +30,17 @@ COPY src/main.py /app/
 COPY src/templates /app/templates
 COPY src/statics /app/statics
 
+# run as a normal user instead of root
+RUN useradd --create-home appuser
+USER appuser
+
 # the app reads PORT, so the port it listens on and EXPOSE always match
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["python", "main.py"]
+# Docker calls /health every 30s and marks the container healthy or unhealthy
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ.get('PORT', '8000') + '/health', timeout=4)"
+
+# gunicorn is a production web server; exec makes it the main process so docker stop works cleanly
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers 2 main:app"]

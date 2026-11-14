@@ -43,5 +43,6 @@ def predict():
             return jsonify({"error": str(e)}), 400
     return render_template('predict.html')
 
+# only used when running "python main.py" directly, the container uses gunicorn
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=PORT)
+    app.run(host='0.0.0.0', port=PORT)
