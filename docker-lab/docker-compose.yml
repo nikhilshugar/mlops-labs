@@ -1,42 +1,37 @@
 services:
-  # Service 1: Train the model
+  # Service 1: the model is trained when this image is built (stage 1 of the dockerfile)
+  # this container only copies the trained model and scaler into the shared volume
   model-training:
-    image: python:3.10-slim
+    build:
+      context: .
+      dockerfile: dockerfile
+      target: model_training
+    image: iris-trainer
     container_name: ml_trainer
-    working_dir: /app
     volumes:
-      - ./src:/app/src
-      - ./requirements.txt:/app/requirements.txt
       - model_exchange:/exchange   # Shared volume mount
-    # Run training -> Copy model and scaler to shared folder
-    command: >
-      sh -c "pip install -r requirements.txt &&
-             python src/model_training.py &&
-             cp my_model.keras scaler.pkl /exchange/"
+    command: sh -c "cp my_model.keras scaler.pkl /exchange/ && echo 'Model copied to shared volume'"
 
-  # Service 2: Serve the model
+  # Service 2: serves predictions, built from stage 2 of the same dockerfile
   serving:
-    image: python:3.10-slim
+    build:
+      context: .
+      dockerfile: dockerfile
+      target: serving
+    image: iris-app
     container_name: ml_serving
-    working_dir: /app
     ports:
       - "8000:8000"
     environment:
       - PORT=8000
+      - MODEL_PATH=/exchange/my_model.keras
+      - SCALER_PATH=/exchange/scaler.pkl
     volumes:
-      - ./src:/app/src
-      - ./requirements.txt:/app/requirements.txt
-      - ./src/templates:/app/templates
-      - ./src/statics:/app/statics
-      - model_exchange:/exchange   # Shared volume mount
+      - model_exchange:/exchange:ro   # read only, serving never changes the model
     depends_on:
       model-training:
         condition: service_completed_successfully
-    # Copy model and scaler FROM shared folder -> Run server
-    command: >
-      sh -c "pip install --trusted-host pypi.python.org -r requirements.txt &&
-             cp /exchange/my_model.keras /exchange/scaler.pkl ./ &&
-             python src/main.py"
+    restart: unless-stopped
 
 volumes:
   model_exchange:
