@@ -1,14 +1,19 @@
 from flask import Flask, request, jsonify, render_template
 import tensorflow as tf
 import numpy as np
+import joblib
+import os
 
 app = Flask(__name__, static_folder='statics')
 
-# URL of your Flask API for making predictions
-api_url = 'http://0.0.0.0:4000/predict'  # Update with the actual URL
+# settings come from environment variables so the Dockerfile and compose can set them
+PORT = int(os.environ.get("PORT", 8000))
+MODEL_PATH = os.environ.get("MODEL_PATH", "my_model.keras")
+SCALER_PATH = os.environ.get("SCALER_PATH", "scaler.pkl")
 
-# Load the TensorFlow model
-model = tf.keras.models.load_model('my_model.keras')  # Replace 'my_model.keras' with the actual model file
+# Load the TensorFlow model and the scaler it was trained with
+model = tf.keras.models.load_model(MODEL_PATH)
+scaler = joblib.load(SCALER_PATH)
 class_labels = ['Setosa', 'Versicolor', 'Virginica']
 
 
@@ -16,30 +21,27 @@ class_labels = ['Setosa', 'Versicolor', 'Virginica']
 def home():
     return "Welcome to the Iris Classifier API!"
 
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"})
+
 @app.route('/predict', methods=['GET', 'POST'])
 def predict():
     if request.method == 'POST':
         try:
             data = request.form
-            sepal_length = float(data['sepal_length'])
-            sepal_width = float(data['sepal_width'])
-            petal_length = float(data['petal_length'])
-            petal_width = float(data['petal_width'])
+            features = [float(data['sepal_length']), float(data['sepal_width']),
+                        float(data['petal_length']), float(data['petal_width'])]
 
-            # Perform the prediction
-            input_data = np.array([sepal_length, sepal_width, petal_length, petal_width])[np.newaxis, ]
-            prediction = model.predict(input_data)
-            predicted_class = class_labels[np.argmax(prediction)]
+            # scale the inputs the same way as the training data
+            input_data = scaler.transform(np.array([features]))
+            prediction = model.predict(input_data, verbose=0)
+            predicted_class = class_labels[int(np.argmax(prediction))]
 
-            # Return the predicted class in the response
-            # Use jsonify() instead of json.dumps() in Flask
             return jsonify({"predicted_class": predicted_class})
         except Exception as e:
-            return jsonify({"error": str(e)})
-    elif request.method == 'GET':
-        return render_template('predict.html')
-    else:
-        return "Unsupported HTTP method"
+            return jsonify({"error": str(e)}), 400
+    return render_template('predict.html')
 
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=4000)
+    app.run(debug=True, host='0.0.0.0', port=PORT)
