@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neural Iris | AI Classifier</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
-    
+
     <style>
         :root {
             --primary: #00f2ff; /* Cyber Cyan */
@@ -178,6 +178,13 @@
             box-shadow: 0 0 15px rgba(0, 242, 255, 0.2);
         }
 
+        /* amber badge when the model is unsure */
+        .prediction-badge.low {
+            border-color: #ffb020;
+            color: #ffb020;
+            box-shadow: 0 0 15px rgba(255, 176, 32, 0.2);
+        }
+
         .flower-card {
             background: rgba(0,0,0,0.3);
             border-radius: 16px;
@@ -219,7 +226,7 @@
     <div class="container">
         <div class="glass-card">
             <h1>NEURAL IRIS</h1>
-            
+
             <form id="predictionForm">
                 <div class="input-group">
                     <label for="sepal_length">Sepal Length</label>
@@ -249,9 +256,9 @@
         </div>
 
         <div id="resultArea" class="glass-card result-container">
-            <div class="prediction-badge">CONFIDENCE: HIGH</div>
+            <div class="prediction-badge" id="confidenceBadge">CONFIDENCE: --</div>
             <h2 id="predictedClass" style="margin: 10px 0; color: #fff; font-family: 'Orbitron', sans-serif;"></h2>
-            
+
             <div class="flower-card">
                 <img src="" id="flowerImage" class="flower-image" alt="Iris Prediction"
                 data-setosa="{{ url_for('static', filename='setosa.jpeg') }}"
@@ -264,13 +271,13 @@
     <script>
         $(document).ready(function() {
             $('#predictionForm').on('submit', function(event) {
-                event.preventDefault(); 
-                
+                event.preventDefault();
+
                 // UI Loading State
                 var $btn = $('.submit-btn');
                 var $text = $('#btnText');
                 var $spinner = $('#btnSpinner');
-                
+
                 $text.hide();
                 $spinner.show();
                 $btn.css('opacity', '0.7');
@@ -289,10 +296,16 @@
                     dataType: 'json',
                     encode: true
                 }).done(function(data) {
-                    
+
                     // Update Text
                     $('#predictedClass').text(data.predicted_class.toUpperCase());
-                    
+
+                    // Show the model's real confidence, amber when below 60%
+                    var confidence = Math.round(data.confidence * 100);
+                    $('#confidenceBadge')
+                        .text('CONFIDENCE: ' + confidence + '%')
+                        .toggleClass('low', confidence < 60);
+
                     // Update Image
                     var imageUrl = '';
                     switch (data.predicted_class) {
@@ -316,8 +329,10 @@
                     $spinner.hide();
                     $btn.css('opacity', '1');
 
-                }).fail(function(data) {
-                    alert('SYSTEM ERROR: Neural Link Disconnected.');
+                }).fail(function(xhr) {
+                    // show the server's error message if there is one
+                    var message = (xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Server not reachable';
+                    alert('Error: ' + message);
                     $text.show();
                     $spinner.hide();
                     $btn.css('opacity', '1');

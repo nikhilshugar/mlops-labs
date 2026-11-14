@@ -18,6 +18,16 @@ scaler = joblib.load(SCALER_PATH)
 class_labels = ['Setosa', 'Versicolor', 'Virginica']
 
 
+def predict_rows(features):
+    """
+    Scales the rows the same way as the training data, runs the model once
+    and returns the predicted class and confidence for each row.
+    """
+    probabilities = model.predict(scaler.transform(np.array(features, dtype=float)), verbose=0)
+    return [{"predicted_class": class_labels[int(p.argmax())],
+             "confidence": round(float(p.max()), 3)} for p in probabilities]
+
+
 @app.route('/')
 def home():
     return "Welcome to the Iris Classifier API!"
@@ -33,13 +43,7 @@ def predict():
             data = request.form
             features = [float(data['sepal_length']), float(data['sepal_width']),
                         float(data['petal_length']), float(data['petal_width'])]
-
-            # scale the inputs the same way as the training data
-            input_data = scaler.transform(np.array([features]))
-            prediction = model.predict(input_data, verbose=0)
-            predicted_class = class_labels[int(np.argmax(prediction))]
-
-            return jsonify({"predicted_class": predicted_class})
+            return jsonify(predict_rows([features])[0])
         except Exception as e:
             return jsonify({"error": str(e)}), 400
     return render_template('predict.html')
@@ -65,9 +69,7 @@ def predict_batch():
         return jsonify({"error": f"send at most {MAX_BATCH} flowers per request"}), 400
 
     # one model call for the whole batch instead of one request per flower
-    probabilities = model.predict(scaler.transform(features), verbose=0)
-    results = [{"predicted_class": class_labels[int(p.argmax())],
-                "confidence": round(float(p.max()), 3)} for p in probabilities]
+    results = predict_rows(features)
     return jsonify({"count": len(results), "predictions": results})
 
 # only used when running "python main.py" directly, the container uses gunicorn
